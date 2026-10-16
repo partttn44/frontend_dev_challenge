@@ -12,10 +12,8 @@ class OrdersController extends GetxController {
   final orders = <OrderModel>[].obs;
   final isLoading = true.obs;
 
-  List<OrderModel> get activeOrders =>
-      orders.where((o) => o.isActive).toList();
-  List<OrderModel> get pastOrders =>
-      orders.where((o) => !o.isActive).toList();
+  List<OrderModel> get activeOrders => orders.where((o) => o.isActive).toList();
+  List<OrderModel> get pastOrders => orders.where((o) => !o.isActive).toList();
 
   @override
   void onInit() {
@@ -26,10 +24,18 @@ class OrdersController extends GetxController {
   Future<void> fetchOrders() async {
     isLoading.value = true;
     try {
-      orders.assignAll(await orderRepo.fetchOrders());
+      final fetchedOrders = await orderRepo.fetchOrders();
+
+      if (isClosed) return;
+
+      orders.assignAll(fetchedOrders);
     } catch (e) {
+      if (isClosed) return;
       LogService.error('fetch orders failed', e);
+    } finally {
+      if (!isClosed) {
+        isLoading.value = false;
+      }
     }
-    isLoading.value = false;
   }
 }
