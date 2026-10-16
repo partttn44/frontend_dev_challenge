@@ -86,11 +86,12 @@ class HomeScreen extends GetView<HomeController> {
                               style: TextStyle(
                                   fontSize: 17, fontWeight: FontWeight.bold)),
                           const Spacer(),
-                          FilterChip(
-                            label: const Text('Pickup today'),
-                            selected: controller.todayOnly.value,
-                            onSelected: (v) => controller.todayOnly.value = v,
-                          ),
+                          Obx(() => FilterChip(
+                                label: const Text('Pickup today'),
+                                selected: controller.todayOnly.value,
+                                onSelected: (v) =>
+                                    controller.todayOnly.value = v,
+                              )),
                         ],
                       ),
                     ),
@@ -129,9 +130,8 @@ class HomeScreen extends GetView<HomeController> {
               final uri = Uri.tryParse(textController.text.trim());
               Get.back();
               if (uri == null) return;
-              final route = uri.hasQuery
-                  ? '${uri.path}?${uri.query}'
-                  : uri.path;
+              final route =
+                  uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
               Get.toNamed(route);
             },
             child: const Text('Open'),
