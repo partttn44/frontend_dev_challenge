@@ -74,13 +74,20 @@ class HomeController extends GetxController {
     try {
       final res = await dealRepo.fetchDeals(page: _page);
       _totalPages = res.totalPages;
-      deals.addAll(res.items);
+
+      final existingIds = deals.map((d) => d.id).toSet();
+      final uniqueNewItems =
+          res.items.where((d) => !existingIds.contains(d.id)).toList();
+
+      deals.addAll(uniqueNewItems);
+      refreshController.loadComplete();
     } catch (e) {
       LogService.error('loadMore failed', e);
       _page--;
+      refreshController.loadFailed();
+    } finally {
+      _isFetchingMore = false;
     }
-    _isFetchingMore = false;
-    refreshController.loadComplete();
   }
 
   void scrollToTop() {
