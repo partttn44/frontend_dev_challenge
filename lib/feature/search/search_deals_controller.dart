@@ -13,24 +13,39 @@ class SearchDealsController extends GetxController {
   final isLoading = false.obs;
   final hasSearched = false.obs;
 
+  String _latestQuery = '';
+
   void onQueryChanged(String query) {
     _search(query);
   }
 
   Future<void> _search(String query) async {
-    if (query.trim().isEmpty) {
+    final trimmedQuery = query.trim();
+
+    _latestQuery = trimmedQuery;
+
+    if (trimmedQuery.isEmpty) {
       results.clear();
       hasSearched.value = false;
+      isLoading.value = false;
       return;
     }
+
     isLoading.value = true;
     hasSearched.value = true;
+
     try {
-      final found = await dealRepo.search(query);
-      results.assignAll(found);
+      final found = await dealRepo.search(trimmedQuery);
+
+      if (_latestQuery == trimmedQuery) {
+        results.assignAll(found);
+        isLoading.value = false;
+      }
     } catch (e) {
-      LogService.error('search failed', e);
+      if (_latestQuery == trimmedQuery) {
+        LogService.error('search failed', e);
+        isLoading.value = false;
+      }
     }
-    isLoading.value = false;
   }
 }
