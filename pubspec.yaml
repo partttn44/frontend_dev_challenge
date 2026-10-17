@@ -1,6 +1,6 @@
 name: rescu
 description: "Rescu — a mini surplus-food marketplace. Hiring assessment starter app."
-publish_to: 'none'
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
@@ -37,3 +37,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/data/
+    - assets/screenshots/

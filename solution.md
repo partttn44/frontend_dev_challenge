@@ -66,12 +66,32 @@
 - **Edge Cases:**
   - **Rapid Scrolling:** กรณีที่ผู้ใช้งาน Scroll ฟีดขึ้นลงอย่างรวดเร็ว ระบบ Deduplication จะช่วยป้องกันไม่ให้ข้อมูลซ้ำซ้อนเล็ดลอดแสดงผลบนหน้าจอ UI
 
+### RES-105 · Home feed janky and memory usage grows over time
+
+- **Root Cause:**
+  เกิดจากปัญหา **Excessive Rebuilds** และ **Unbounded Memory Allocations** ฝั่ง UI โดยเฉพาะการครอบ `Obx` เป็นวงกว้างรอบ `Scaffold` ใน `HomeScreen` ส่งผลให้ทุกครั้งที่มีการ Scroll (`scrollOffset` เปลี่ยนแปลง) วิดเจ็ตทั้งหมดในหน้าจอจะถูก Rebuild ใหม่ซ้ำซ้อนอย่างต่อเนื่อง ทำให้ **UI Thread** ประมวลผลไม่ทันเฟรม (เกิน 16.6ms) จนเกิดอาการ **Jank (Frame Drops)** และทำให้ Garbage Collector (GC) ต้องทำงานอย่างหนักจน Memory พุ่งสูงขึ้นเรื่อยๆ
+
+- **Performance Comparison (Flutter DevTools):**
+  - **Before Fix (Janky Frame Drops):**
+    ![Before Fix Performance](./assets/screenshots/old_code_jank.jpg)
+  - **After Fix (Optimized Render):**
+    ![After Fix Performance](./assets/screenshots/new_code_smooth.jpg)
+
+- **Why this fix is correct & Alternatives considered:**
+  - _แนวทางที่เลือก (UI Optimization & Scoped Reactivity):_
+    จำกัดขอบเขตของ `Obx` ให้แคบที่สุดเฉพาะส่วนที่จำเป็น, ปรับปรุงการเรนเดอร์ด้วยโครงสร้างที่เหมาะสม, เติม `const` Constructors สำหรับ Static Widgets และกำหนดขนาด Cache ของรูปภาพเพื่อควบคุม Memory Heap
+  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
+    - **การแก้ที่ Controller เพียงอย่างเดียว:** ไม่สามารถแก้ปัญหาได้ เพราะต้นตอของการเรนเดอร์เฟรมดรอปเกิดจากการสั่ง Rebuild วิดเจ็ตฝั่ง UI ที่ถี่เกินไป
+
+- **Edge Cases:**
+  - **Rapid Fling Scrolling:** การปัดฟีดลงอย่างรวดเร็ว ระบบ Lazy Loading และการลดจำนวน Rebuild ซ้ำซ้อนจะช่วยป้องกันไม่ให้ Frame Rate ตกร่วงลงไปอยู่ในระดับ Jank
+
 ---
 
 ## 2. AI Usage Log
 
 - **Tools Used:**
-  - **Gemini / Claude / GitHub Copilot:** ใช้ร่วมกันในกระบวนการ Development เพื่อช่วยวิเคราะห์ Architecture, ตรวจสอบที่มาของ **Asynchronous Race Condition**, **Memory Leak**, รวมถึงช่วยออกแบบแนวทางการจัดการ **Widget Lifecycle** และ **GetX Workers**
+  - **Gemini :** ใช้ร่วมกันในกระบวนการ Development เพื่อช่วยวิเคราะห์ Architecture, ตรวจสอบที่มาของ **Asynchronous Race Condition**, **Memory Leak**, รวมถึงช่วยออกแบบแนวทางการจัดการ **Widget Lifecycle** และ **GetX Workers**
 
 - **Concrete Examples of misleading AI suggestions:**
   1. _ตัวอย่างที่ 1 (การแนะนำวิธีแก้ Race Condition ที่ซับซ้อนเกินไป - RES-101):_
@@ -91,6 +111,6 @@
 
 ## 4. Time Spent & Next Steps
 
-- **Time Spent:** ประมาณ 3-4 ชั่วโมง
+- **Time Spent:** ประมาณ 7-8 ชั่วโมง
 - **What I would do next with one more day:**
   หากมีเวลาเพิ่มขึ้นอีกหนึ่งวัน จะดำเนินการเพิ่มชุด **Automated Tests** (Unit Tests สำหรับ Controller Logic และ Widget Tests สำหรับ Timer Lifecycles) และปรับปรุงระบบ **Image Caching** เพื่อเพิ่ม **Performance** ในการ Scroll หน้า Feed ให้ดียิ่งขึ้น
