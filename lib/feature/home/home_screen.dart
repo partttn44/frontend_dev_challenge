@@ -14,11 +14,11 @@ class HomeScreen extends GetView<HomeController> {
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      final offset = controller.scrollOffset.value;
-      return Scaffold(
-        appBar: AppBar(
-          elevation: offset > 4 ? 2 : 0,
+    return Scaffold(
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: AppBar(
+          elevation: controller.scrollOffset.value > 4 ? 2 : 0,
           shadowColor: Colors.black26,
           title: const Row(
             children: [
@@ -59,13 +59,12 @@ class HomeScreen extends GetView<HomeController> {
             ),
           ],
         ),
-        body: controller.isLoading.value
-            ? ListView(
-                children: const [
-                  ShimmerDealCard(),
-                  ShimmerDealCard(),
-                  ShimmerDealCard(),
-                ],
+      ),
+      body: Obx(
+        () => controller.isLoading.value
+            ? ListView.builder(
+                itemCount: 3,
+                itemBuilder: (context, index) => const ShimmerDealCard(),
               )
             : SmartRefresher(
                 controller: controller.refreshController,
@@ -73,42 +72,49 @@ class HomeScreen extends GetView<HomeController> {
                 enablePullUp: true,
                 onRefresh: controller.refreshDeals,
                 onLoading: controller.loadMore,
-                child: ListView(
+                child: SingleChildScrollView(
                   controller: controller.scrollController,
-                  children: [
-                    if (controller.flashDeals.isNotEmpty)
-                      FlashDealsSection(deals: controller.flashDeals),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: Row(
-                        children: [
-                          const Text('Nearby deals',
-                              style: TextStyle(
-                                  fontSize: 17, fontWeight: FontWeight.bold)),
-                          const Spacer(),
-                          Obx(() => FilterChip(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (controller.flashDeals.isNotEmpty)
+                        FlashDealsSection(deals: controller.flashDeals),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Row(
+                          children: [
+                            const Text('Nearby deals',
+                                style: TextStyle(
+                                    fontSize: 17, fontWeight: FontWeight.bold)),
+                            const Spacer(),
+                            Obx(
+                              () => FilterChip(
                                 label: const Text('Pickup today'),
                                 selected: controller.todayOnly.value,
                                 onSelected: (v) =>
                                     controller.todayOnly.value = v,
-                              )),
-                        ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    ...controller.visibleDeals
-                        .map((deal) => DealCard(deal: deal)),
-                    const SizedBox(height: 24),
-                  ],
+                      ...controller.visibleDeals
+                          .map((deal) => DealCard(deal: deal)),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
                 ),
               ),
-        floatingActionButton: offset > 800
+      ),
+      floatingActionButton: Obx(
+        () => controller.scrollOffset.value > 800
             ? FloatingActionButton.small(
                 onPressed: controller.scrollToTop,
                 child: const Icon(Icons.arrow_upward),
               )
-            : null,
-      );
-    });
+            : const SizedBox.shrink(),
+      ),
+    );
   }
 
   void _showDeepLinkDialog(BuildContext context) {
