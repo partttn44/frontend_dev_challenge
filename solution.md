@@ -105,6 +105,21 @@
 - **Edge Cases:**
   - **Midnight Crossings / Late Night Deals:** กรณีที่เวลารับสินค้าคาบเกี่ยวช่วงเที่ยงคืน (เช่น ดึกสว่างของอีกวัน) การเทียบปี เดือน และวันแบบครบถ้วนช่วยป้องกันไม่ให้ระบบจำแนกวันสลับกันระหว่างวันปัจจุบันกับวันถัดไป
 
+### RES-107 · Deep link opens to a crash
+
+- **Root Cause:**
+  เกิดจากปัญหา **Missing Route Arguments / State Mismatch** เมื่อเปิดดีลผ่านหน้า Homescreen แอปจะส่งโมเดลข้อมูลผ่าน `arguments` (`Get.toNamed(..., arguments: deal)`) ทำให้หน้าจอรายละเอียดดีลอ่านค่าได้ทันที แต่เมื่อเปิดผ่าน Deep Link (เช่น ผ่าน Push Notification หรือสคริปต์จำลอง `rescu://open/deal?id=42&source=push`) ระบบจะนำทางผ่าน URL โดยตรงโดยไม่มีการแนบ Object ของดีลมาด้วย ทำให้ `Get.arguments` มีค่าเป็น `null` และเมื่อโค้ดเดิมพยายามแคสต์ค่าดังกล่าวเป็น `DealModel` โดยตรง (`Get.arguments as DealModel`) จึงเกิดข้อผิดพลาดประเภท `type 'Null' is not a subtype of type 'DealModel'` ส่งผลให้แอป Crash ทันทีในโหมด Debug
+
+- **Why this fix is correct & Alternatives considered:**
+  - _แนวทางที่เลือก (Fallback Data Fetching & Dual-source Resolution):_
+    ปรับปรุง `DealDetailsController` และ `DealDetailsScreen` ให้รองรับทั้งสองกรณี โดยตรวจสอบว่าหากมี `Get.arguments` ให้ใช้งานได้ทันที แต่ถ้าไม่มี (`null`) ให้ดึงรหัส `id` จาก Route Parameters หรือ Query Parameters (`?id=42`) แล้วเรียกใช้งาน Repository (`dealRepo.fetchById(dealId)`) เพื่อโหลดข้อมูลดีลจาก Backend มาแสดงผลผ่านสถานะ Reactive (`Rxn<DealModel>`) พร้อมรองรับสถานะกำลังโหลด (`isLoading`) วิธีนี้ช่วยให้การเปิดผ่าน Deep Link ทำงานได้อย่างสมบูรณ์ ปลอดภัย และไม่ผิดข้อกำหนดของโจทย์
+  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
+    - **การแสดงหน้าจอ Error หรือ Fallback Screen แทน:** ผิดข้อกำหนดของโจทย์ที่ระบุไว้ชัดเจนว่า _การแสดงหน้าจอ Error หรือ Fallback ไม่ถือว่าเป็นวิธีแก้ปัญหาที่ยอมรับได้_ ลิงก์จะต้องพาผู้ใช้งานไปยังหน้าดีลที่ใช้งานได้จริง
+    - **การบังคับพาส Object ผ่าน Deep Link:** เป็นไปไม่ได้ในทางปฏิบัติ เนื่องจากระบบภายนอก (เช่น Push Notification หรือ Browser Intents) สามารถส่งมาได้แค่รูปแบบ URL String เท่านั้น
+
+- **Edge Cases:**
+  - **Invalid or Expired Deal ID:** กรณีที่ Deep Link ส่งรหัสดีลที่ไม่ถูกต้องหรือไม่มีอยู่จริงในแคตตาล็อก ระบบจะดักจับข้อผิดพลาดและแสดงผลข้อความแจ้งเตือนที่เข้าใจง่ายภายในหน้าจออย่างปลอดภัยโดยไม่ทำให้แอปเกิดอาการค้างหรือพัง
+
 ---
 
 ## 2. AI Usage Log
