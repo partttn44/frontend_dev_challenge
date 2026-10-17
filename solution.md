@@ -73,9 +73,9 @@
 
 - **Performance Comparison (Flutter DevTools):**
   - **Before Fix (Janky Frame Drops):**
-    ![Before Fix Performance](./assets/screenshots/old_code_jank.jpg)
+    ![Before Fix Performance](./assets/screenshots/old_code_jank.png)
   - **After Fix (Optimized Render):**
-    ![After Fix Performance](./assets/screenshots/new_code_smooth.jpg)
+    ![After Fix Performance](./assets/screenshots/new_code_smooth.png)
 
 - **Why this fix is correct & Alternatives considered:**
   - _แนวทางที่เลือก (UI Optimization & Scoped Reactivity):_
