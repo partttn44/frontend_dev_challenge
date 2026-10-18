@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:rescu/feature/shared_widget/flash_countdown_badge.dart';
 
 import '../../app_config.dart';
 import '../shared_widget/the_network_image.dart';
@@ -37,6 +38,10 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
       }
 
       final deal = controller.deal;
+      final hasFlashSale = deal.isFlashSale && deal.flashSaleEndsAt != null;
+      final isExpired =
+          hasFlashSale && DateTime.now().isAfter(deal.flashSaleEndsAt!);
+
       return Scaffold(
         body: CustomScrollView(
           slivers: [
@@ -44,8 +49,61 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
               expandedHeight: 240,
               pinned: true,
               flexibleSpace: FlexibleSpaceBar(
-                background:
+                background: Stack(
+                  fit: StackFit.expand,
+                  children: [
                     TheNetworkImage(url: deal.imageUrl, fit: BoxFit.cover),
+                    if (hasFlashSale)
+                      Positioned(
+                        top: 50,
+                        left: 16,
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isExpired
+                                    ? Colors.grey
+                                    : Colors.red.shade600,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                'FLASH SALE',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: isExpired
+                                  ? const Text(
+                                      'Expired',
+                                      style: TextStyle(
+                                          color: Colors.grey,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold),
+                                    )
+                                  : FlashCountdownBadge(
+                                      flashSaleEndsAt: deal.flashSaleEndsAt!,
+                                      onExpired: () {
+                                        controller.update();
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             SliverToBoxAdapter(
@@ -68,10 +126,12 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
                     Row(
                       children: [
                         Text('฿${deal.price.toStringAsFixed(0)}',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: AppConfig.primaryGreen)),
+                                color: isExpired
+                                    ? Colors.grey
+                                    : AppConfig.primaryGreen)),
                         const SizedBox(width: 8),
                         Text('฿${deal.originalPrice.toStringAsFixed(0)}',
                             style: TextStyle(
@@ -157,9 +217,12 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
           child: SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: controller.addToCart,
+              onPressed: isExpired ? null : controller.addToCart,
+              style: FilledButton.styleFrom(
+                backgroundColor: isExpired ? Colors.grey : null,
+              ),
               icon: const Icon(Icons.add_shopping_cart),
-              label: const Text('Add to bag'),
+              label: Text(isExpired ? 'Deal Expired' : 'Add to bag'),
             ),
           ),
         ),
