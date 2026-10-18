@@ -15,7 +15,10 @@ class OrderRepo extends GetxService {
     return json.map(OrderModel.fromJson).toList();
   }
 
-  Future<OrderModel> checkout(List<CartItemModel> items) async {
+  Future<OrderModel> checkout({
+    required List<CartItemModel> items,
+    List<String>? reservationIds,
+  }) async {
     final json = await api.checkout([
       for (final item in items)
         {

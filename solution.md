@@ -120,6 +120,20 @@
 - **Edge Cases:**
   - **Invalid or Expired Deal ID:** กรณีที่ Deep Link ส่งรหัสดีลที่ไม่ถูกต้องหรือไม่มีอยู่จริงในแคตตาล็อก ระบบจะดักจับข้อผิดพลาดและแสดงผลข้อความแจ้งเตือนที่เข้าใจง่ายภายในหน้าจออย่างปลอดภัยโดยไม่ทำให้แอปเกิดอาการค้างหรือพัง
 
+## [F-1] Live Flash-Sale Countdowns
+
+### ปัญหา (Problem)
+
+1. **Live Countdown & Persistence:** การนับถอยหลังเวลา Flash Sale ต้องอิงกับเวลาจริง (`DateTime.now()`) เพื่อให้เมื่อผู้ใช้เปิดแอปใหม่หรือสลับหน้าจอ ตัวเลขเวลายังคงเดินต่อเนื่องและแม่นยำตลอดเวลา
+2. **Expired Deal Handling:** เมื่อดีล Flash Sale หมดอายุ (`Expired`) ต้องล็อกไม่ให้ผู้ใช้กดซื้อหรือเพิ่มลงตะกร้าได้อีก และหากมีดีลที่หมดอายุค้างอยู่ในตะกร้า ต้องทำการถอดถอนออกอัตโนมัติพร้อมแสดงข้อความแจ้งเตือนที่ชัดเจน
+3. **UI & State Render Bug:** การสั่งลบรายการสินค้าในตะกร้าหรือเรียกแสดง `Get.snackbar` ขณะที่ Widget กำลังเรนเดอร์ ทำให้เกิดข้อผิดพลาดประเภท `ErrorSummary` และปัญหาการ Rebuild ซ้ำซ้อน
+
+### แนวทางแก้ไข (Solution)
+
+1. **Absolute Time Comparison:** ออกแบบการคำนวณเวลาโดยเปรียบเทียบ `flashSaleEndsAt` กับ `DateTime.now()` ผ่าน `Timer.periodic` ใน `FlashCountdownBadge` ช่วยให้การแสดงผลเวลานับถอยหลังแม่นยำและต่อเนื่องแม้ปิด/เปิดแอปใหม่
+2. **Controller-Level Initialization:** จัดการตรวจสอบและกวาดล้างดีล Flash Sale ที่หมดอายุเมื่อเข้าสู่หน้าตะกร้าผ่าน `CartController.onInit()` โดยใช้ `Future.microtask` เพื่อลบรายการและแจ้งเตือนผู้ใช้อย่างปลอดภัยนอกช่วงเวลา `build` เฟรม
+3. **UI State & Action Lockdown:** อัปเดต `DealDetailsScreen` และ `CartScreen` ให้รองรับการปิดใช้งานปุ่มซื้อ/เพิ่มสินค้า (Disabled State) รวมถึงเปลี่ยนสีการ์ดเป็นโทนเทาทันทีเมื่อดีลหมดอายุ เพื่อป้องกันการทำธุรกรรมบนดีลที่สิ้นสุดระยะเวลาแล้ว
+
 ---
 
 ## 2. AI Usage Log
@@ -145,6 +159,6 @@
 
 ## 4. Time Spent & Next Steps
 
-- **Time Spent:** ประมาณ 7-8 ชั่วโมง
+- **Time Spent:** ประมาณ 8-12 ชั่วโมง
 - **What I would do next with one more day:**
   หากมีเวลาเพิ่มขึ้นอีกหนึ่งวัน จะดำเนินการเพิ่มชุด **Automated Tests** (Unit Tests สำหรับ Controller Logic และ Widget Tests สำหรับ Timer Lifecycles) และปรับปรุงระบบ **Image Caching** เพื่อเพิ่ม **Performance** ในการ Scroll หน้า Feed ให้ดียิ่งขึ้น
