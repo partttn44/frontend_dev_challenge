@@ -26,7 +26,7 @@
 
 - **Why this fix is correct & Alternatives considered:**
   - _แนวทางที่เลือก:_
-    ประกาศตัวแปรเก็บ Reference ของ `Timer?` ภายใน State Class และเพิ่มคำสั่ง Cancel (`_timer?.cancel()`) ไว้ในฟังก์ชัน `dispose()` พร้อมใช้กลไก **Mounted Guard** (`if (!mounted) return`) เช็คก่อนเรียก `setState()` รวมถึงเพิ่มการเช็ค `if (isClosed) return` ใน `OrdersController` วิธีนี้ช่วยตัดวงจรการทำงานค้างใน **Background**, ป้องกัน **Memory Leak** ได้อย่างสมบูรณ์ และรักษาเสถียรภาพของ **UI Lifecycle**
+    ประกาศตัวแปรเก็บ Reference ของ `Timer?` ภายใน State Class และเพิ่มคำสั่ง Cancel (`_timer?.cancel()`) ไว้ในฟังก์ชัน `dispose()` พร้อมใช้กลไก **Mounted Guard** (`if (!mounted) return`) เช็คก่อนเรียก `setState()` รวมถึงเพิ่มการเช็ค `if (isClosed) return` ใน `OrdersController` วิธีนี้ช่วยตัดการทำงานค้างใน **Background**, ป้องกัน **Memory Leak** ได้อย่างสมบูรณ์ และรักษาเสถียรภาพของ **UI Lifecycle**
   - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
     - **การเช็ค `mounted` เพียงอย่างเดียวโดยไม่ Cancel Timer:** ช่วยป้องกัน Crash ตอนเรียก `setState()` ได้จริง แต่ปล่อยให้ Timer ทำงานวนลูปเปลือง **CPU** และส่งผลให้เกิด **Memory Leak** อย่างต่อเนื่อง
     - **การดักจับ Error ด้วย `try-catch`:** เป็นการซ่อนอาการของ Bug (**Masking symptoms**) โดยไม่ได้แก้ที่ต้นเหตุและไม่สามารถหยุดยั้งปัญหาหน่วยความจำรั่วไหลได้
@@ -105,6 +105,8 @@
 - **Edge Cases:**
   - **Midnight Crossings / Late Night Deals:** กรณีที่เวลารับสินค้าคาบเกี่ยวช่วงเที่ยงคืน (เช่น ดึกสว่างของอีกวัน) การเทียบปี เดือน และวันแบบครบถ้วนช่วยป้องกันไม่ให้ระบบจำแนกวันสลับกันระหว่างวันปัจจุบันกับวันถัดไป
 
+---
+
 ### RES-107 · Deep link opens to a crash
 
 - **Root Cause:**
@@ -120,6 +122,8 @@
 - **Edge Cases:**
   - **Invalid or Expired Deal ID:** กรณีที่ Deep Link ส่งรหัสดีลที่ไม่ถูกต้องหรือไม่มีอยู่จริงในแคตตาล็อก ระบบจะดักจับข้อผิดพลาดและแสดงผลข้อความแจ้งเตือนที่เข้าใจง่ายภายในหน้าจออย่างปลอดภัยโดยไม่ทำให้แอปเกิดอาการค้างหรือพัง
 
+---
+
 ## [F-1] Live Flash-Sale Countdowns
 
 ### ปัญหา (Problem)
@@ -133,6 +137,24 @@
 1. **Absolute Time Comparison:** ออกแบบการคำนวณเวลาโดยเปรียบเทียบ `flashSaleEndsAt` กับ `DateTime.now()` ผ่าน `Timer.periodic` ใน `FlashCountdownBadge` ช่วยให้การแสดงผลเวลานับถอยหลังแม่นยำและต่อเนื่องแม้ปิด/เปิดแอปใหม่
 2. **Controller-Level Initialization:** จัดการตรวจสอบและกวาดล้างดีล Flash Sale ที่หมดอายุเมื่อเข้าสู่หน้าตะกร้าผ่าน `CartController.onInit()` โดยใช้ `Future.microtask` เพื่อลบรายการและแจ้งเตือนผู้ใช้อย่างปลอดภัยนอกช่วงเวลา `build` เฟรม
 3. **UI State & Action Lockdown:** อัปเดต `DealDetailsScreen` และ `CartScreen` ให้รองรับการปิดใช้งานปุ่มซื้อ/เพิ่มสินค้า (Disabled State) รวมถึงเปลี่ยนสีการ์ดเป็นโทนเทาทันทีเมื่อดีลหมดอายุ เพื่อป้องกันการทำธุรกรรมบนดีลที่สิ้นสุดระยะเวลาแล้ว
+
+---
+
+## [F-2] Impression Tracking with Batch Analytics
+
+### ปัญหา (Problem)
+
+1. **Visibility & Tracking:** ต้องการระบบตรวจสอบการมองเห็นการ์ดดีลเมื่อแสดงผลบนหน้าจอ (`HomeScreen`) โดยไม่ให้ส่งข้อมูลซ้ำซ้อน (`Deduplication`) ในเซสชันเดียวกัน
+2. **Network Optimization (Batching):** การส่งข้อมูล Analytics แบบทีละรายการ (`Single Request`) จะสร้างภาระให้กับ Network และเปลืองทรัพยากรเมื่อผู้ใช้งานเลื่อนหน้าจออย่างรวดเร็ว
+
+### แนวทางแก้ไข (Solution)
+
+1. **Visibility Detection:** ใช้แพ็กเกจ `visibility_detector` ห่อหุ้ม `DealCard` พร้อมตั้งค่าเงื่อนไข `visibleFraction >= 0.5` เพื่อส่งสัญญาณบันทึก Impression เมื่อปรากฏบนหน้าจอเกิน 50%
+2. **Controller-Level Queue & Batching:**
+   - จัดการเก็บ State การนับผ่าน `_trackedImpressions` (Set) เพื่อป้องกันการส่งซ้ำ
+   - สร้างคิวสะสม `_pendingAnalyticsEvents` และกำหนดขนาด Batch ไว้อย่างถูกต้องที่ **10 อีเวนต์** (`_batchSize = 10`)
+   - เรียกใช้ `DealRepo.sendAnalyticsBatch` เพื่อส่งข้อมูลเป็นชุดผ่าน `FakeApiService.sendAnalyticsBatch`
+   - จัดการส่งข้อมูลที่ค้างอยู่ในคิวโดยอัตโนมัติเมื่อมีการ Refresh หรือเมื่อออกจากหน้าจอ (`onClose`) ผ่านฟังก์ชัน `_flushAnalyticsBatch()`
 
 ---
 
@@ -155,10 +177,12 @@
 
 ## 3. Design Questions
 
+_(ไม่มีคำถามเฉพาะเจาะจงเพิ่มเติมในส่วนนี้)_
+
 ---
 
 ## 4. Time Spent & Next Steps
 
-- **Time Spent:** ประมาณ 8-12 ชั่วโมง
+- **Time Spent:** ประมาณ 12-16 ชั่วโมง
 - **What I would do next with one more day:**
   หากมีเวลาเพิ่มขึ้นอีกหนึ่งวัน จะดำเนินการเพิ่มชุด **Automated Tests** (Unit Tests สำหรับ Controller Logic และ Widget Tests สำหรับ Timer Lifecycles) และปรับปรุงระบบ **Image Caching** เพื่อเพิ่ม **Performance** ในการ Scroll หน้า Feed ให้ดียิ่งขึ้น

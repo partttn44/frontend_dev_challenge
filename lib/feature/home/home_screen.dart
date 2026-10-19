@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
+import 'package:visibility_detector/visibility_detector.dart'; // แพ็กเกจสำหรับตรวจสอบการมองเห็น
 
 import '../../app_config.dart';
 import '../../routes/routes.dart';
@@ -99,7 +100,15 @@ class HomeScreen extends GetView<HomeController> {
                         ),
                       ),
                       ...controller.visibleDeals
-                          .map((deal) => DealCard(deal: deal)),
+                          .map((deal) => VisibilityDetector(
+                                key: Key('deal_impression_${deal.id}'),
+                                onVisibilityChanged: (visibilityInfo) {
+                                  if (visibilityInfo.visibleFraction >= 0.5) {
+                                    controller.trackDealImpression(deal.id);
+                                  }
+                                },
+                                child: DealCard(deal: deal),
+                              )),
                       const SizedBox(height: 24),
                     ],
                   ),

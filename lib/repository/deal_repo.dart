@@ -28,4 +28,9 @@ class DealRepo extends GetxService {
     final json = await api.searchDeals(query);
     return json.map(DealModel.fromJson).toList();
   }
+
+  Future<void> sendAnalyticsBatch(List<Map<String, dynamic>> events) async {
+    if (events.isEmpty) return;
+    await api.sendAnalyticsBatch(events);
+  }
 }

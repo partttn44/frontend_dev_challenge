@@ -24,6 +24,12 @@ class HomeController extends GetxController {
   int _totalPages = 1;
   bool _isFetchingMore = false;
 
+  final Set<int> _trackedImpressions = {};
+
+  final List<Map<String, dynamic>> _pendingAnalyticsEvents = [];
+
+  static const int _batchSize = 10;
+
   bool get hasMore => _page < _totalPages;
 
   List<DealModel> get visibleDeals => todayOnly.value
@@ -56,10 +62,15 @@ class HomeController extends GetxController {
   }
 
   Future<void> refreshDeals() async {
+    await _flushAnalyticsBatch();
+
     _page = 1;
     final res = await dealRepo.fetchDeals(page: 1);
     _totalPages = res.totalPages;
     deals.assignAll(res.items);
+
+    _trackedImpressions.clear();
+
     refreshController.refreshCompleted();
   }
 
@@ -90,6 +101,38 @@ class HomeController extends GetxController {
     }
   }
 
+  void trackDealImpression(int dealId) {
+    if (_trackedImpressions.contains(dealId)) return;
+
+    _trackedImpressions.add(dealId);
+
+    final event = {
+      'type': 'impression',
+      'dealId': dealId,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    _pendingAnalyticsEvents.add(event);
+
+    if (_pendingAnalyticsEvents.length >= _batchSize) {
+      _flushAnalyticsBatch();
+    }
+  }
+
+  Future<void> _flushAnalyticsBatch() async {
+    if (_pendingAnalyticsEvents.isEmpty) return;
+
+    final eventsToSend =
+        List<Map<String, dynamic>>.from(_pendingAnalyticsEvents);
+    _pendingAnalyticsEvents.clear();
+
+    try {
+      await dealRepo.sendAnalyticsBatch(eventsToSend);
+    } catch (e) {
+      LogService.error('Failed to send analytics batch', e);
+    }
+  }
+
   void scrollToTop() {
     scrollController.animateTo(0,
         duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
@@ -97,6 +140,7 @@ class HomeController extends GetxController {
 
   @override
   void onClose() {
+    _flushAnalyticsBatch();
     scrollController.dispose();
     refreshController.dispose();
     super.onClose();
