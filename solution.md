@@ -156,6 +156,33 @@
    - เรียกใช้ `DealRepo.sendAnalyticsBatch` เพื่อส่งข้อมูลเป็นชุดผ่าน `FakeApiService.sendAnalyticsBatch`
    - จัดการส่งข้อมูลที่ค้างอยู่ในคิวโดยอัตโนมัติเมื่อมีการ Refresh หรือเมื่อออกจากหน้าจอ (`onClose`) ผ่านฟังก์ชัน `_flushAnalyticsBatch()`
 
+## [F-3] Stock Reservations with Optimistic UI & Automatic Rollback
+
+### ปัญหา (Problem)
+
+1. **Perceived Latency & Slow UX:** ผู้ใช้งานต้องรอผลตอบกลับจาก Network (API Latency 350-1100ms) ก่อนที่ปุ่ม Add to Bag จะตอบสนองและอัปเดตจำนวนสินค้า ทำให้แอปดูหน่วงและไม่ลื่นไหล
+2. **Race Condition & Overbooking:** สินค้าจำกัดจำนวน หากมีผู้ใช้งานกดจองพร้อมกันหลายคน เซิร์ฟเวอร์อาจปฏิเสธการจองด้วย Error 409 (Conflict / Out of stock) ซึ่งฝั่ง Client ต้องจัดการสถานะให้ตรงกัน
+3. **State Consistency:** หากการจองบนเซิร์ฟเวอร์ล้มเหลว สถานะสต็อกคงเหลือบนหน้าจอและรายการสินค้าในตะกร้าจะต้องถูกดึงกลับ (Rollback) อัตโนมัติทันทีพร้อมแจ้งเตือนผู้ใช้
+
+### แนวทางแก้ไข (Solution)
+
+1. **Optimistic UI Pattern:**
+   - เพิ่มเมธอด `copyWith` ใน `DealModel` เพื่อสร้างสำเนาข้อมูลพร้อมอัปเดตค่า `quantityLeft` ทันที
+   - อัปเดต UI หน้า `DealDetailsScreen` และเพิ่มสินค้าลง `CartService` ทันทีที่ผู้ใช้กดปุ่ม โดยไม่ต้องรอ API Response
+2. **Background API & Reservation Association:**
+   - ยิง API `reserveDeal` ใน Background พร้อมล็อกสถานะปุ่มด้วย `isReserving` เพื่อป้องกันการกดซ้ำซ้อน
+   - แนบข้อมูลการจอง (`reservation`) เข้ากับ `CartItemModel` ในตะกร้า เพื่อเตรียมส่งต่อไปยังขั้นตอน `CartController.checkout()`
+3. **Automatic Rollback & Error Handling:**
+   - ดักจับ `ApiException` เมื่อการจองไม่สำเร็จ (เช่น ติดเงื่อนไขจำลองเซิร์ฟเวอร์หรือสินค้าหมด) ระบบจะเรียกฟังก์ชัน Rollback เพื่อคืนค่า `quantityLeft` เดิมบนหน้าจอ และสั่ง `cartService.remove(deal.id)` เพื่อถอดสินค้าออกจากตะกร้าทันที พร้อมแสดง Snackbar แจ้งเตือนข้อความจริงจาก Server
+
+### การตัดสินใจในส่วนที่กำหนดรายละเอียดไม่ครบถ้วน (Underspecified Product Decision)
+
+- **สถานการณ์:** เมื่อการจองสินค้าในตะกร้าหมดอายุ (Duration > 5 minutes) ระหว่างที่ผู้ใช้งานยังใช้งานอยู่ในแอปหรือกำลังเตรียมตัว Checkout
+- **การตัดสินใจ (Decision):** ระบบจะทำเครื่องหมายและแสดงแถบเตือนสถานะ "Reservation expired" บนรายการสินค้าในตะกร้าทันที พร้อมทั้งบล็อกปุ่ม Checkout และป้องกันไม่ให้ส่ง `reservationId` ที่หมดอายุไปยังระบบสั่งซื้อ
+- **เหตุผล (Justification):**
+  1. ป้องกันข้อผิดพลาด `410 Reservation Expired` จากฝั่ง Backend ที่จะทำให้ผู้ใช้เกิดความสับสน
+  2. ช่วยให้ UX มีความโปร่งใส ผู้ใช้รับรู้ทันทีว่าสิทธิ์การจองหลุดลอยไปแล้ว และสามารถตัดสินใจจัดการตะกร้าสินค้าของตนเองต่อได้ (เช่น กดลบหรือเลือกใหม่)
+
 ---
 
 ## 2. AI Usage Log

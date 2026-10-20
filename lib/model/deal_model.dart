@@ -68,4 +68,44 @@ class DealModel {
 
   int get discountPercent =>
       originalPrice <= 0 ? 0 : (100 - (price / originalPrice * 100)).round();
+
+  DealModel copyWith({
+    int? id,
+    String? name,
+    String? description,
+    String? imageUrl,
+    num? originalPrice,
+    num? price,
+    String? currencyCode,
+    int? quantityLeft,
+    int? storeId,
+    String? storeName,
+    String? storeAddress,
+    double? lat,
+    double? lng,
+    double? rating,
+    List<String>? tags,
+    PickupWindowModel? pickupWindow,
+    DateTime? flashSaleEndsAt,
+  }) {
+    return DealModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      imageUrl: imageUrl ?? this.imageUrl,
+      originalPrice: originalPrice ?? this.originalPrice,
+      price: price ?? this.price,
+      currencyCode: currencyCode ?? this.currencyCode,
+      quantityLeft: quantityLeft ?? this.quantityLeft,
+      storeId: storeId ?? this.storeId,
+      storeName: storeName ?? this.storeName,
+      storeAddress: storeAddress ?? this.storeAddress,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      rating: rating ?? this.rating,
+      tags: tags ?? this.tags,
+      pickupWindow: pickupWindow ?? this.pickupWindow,
+      flashSaleEndsAt: flashSaleEndsAt ?? this.flashSaleEndsAt,
+    );
+  }
 }

@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:rescu/service/api_exception.dart';
 
 import '../../model/deal_model.dart';
 import '../../repository/deal_repo.dart';
@@ -26,6 +28,8 @@ class DealDetailsController extends GetxController {
 
   final _quantityLeft = RxnInt();
   int? get quantityLeft => _quantityLeft.value;
+
+  final RxBool isReserving = false.obs;
 
   Worker? _cartWorker;
 
@@ -102,14 +106,56 @@ class DealDetailsController extends GetxController {
     _quantityLeft.value = fresh.quantityLeft;
   }
 
-  void addToCart() {
-    if (!hasDeal) return;
-    cartService.add(deal);
+  Future<void> addToCart() async {
+    if (!hasDeal || (quantityLeft ?? 0) <= 0) return;
+    if (isReserving.value) return;
+
+    final previousQuantityLeft = quantityLeft!;
+
+    _quantityLeft.value = previousQuantityLeft - 1;
+
+    final optimisticDeal =
+        deal.copyWith(quantityLeft: previousQuantityLeft - 1);
+
+    cartService.add(optimisticDeal);
+
+    isReserving.value = true;
+
+    try {
+      final reservationData = await dealRepo.reserveDeal(deal.id, quantity: 1);
+      LogService.log('Successfully reserved: ${reservationData['id']}');
+
+      cartService.attachReservation(deal.id, reservationData);
+
+      Get.snackbar(
+        'Added to bag',
+        '${deal.name} — pick up ${deal.pickupWindow.label}',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 2),
+      );
+    } catch (e) {
+      String errorMsg = 'Could not reserve item. Please try again.';
+      if (e is ApiException) {
+        errorMsg = e.message;
+      }
+
+      _rollbackAddToCart(previousQuantityLeft, errorMsg);
+    } finally {
+      isReserving.value = false;
+    }
+  }
+
+  void _rollbackAddToCart(int previousQuantityLeft, String reason) {
+    _quantityLeft.value = previousQuantityLeft;
+    cartService.remove(deal.id);
+
     Get.snackbar(
-      'Added to bag',
-      '${deal.name} — pick up ${deal.pickupWindow.label}',
+      'Reservation Failed',
+      reason,
       snackPosition: SnackPosition.BOTTOM,
-      duration: const Duration(seconds: 2),
+      backgroundColor: Colors.red.shade100,
+      colorText: Colors.red.shade900,
+      duration: const Duration(seconds: 3),
     );
   }
 }

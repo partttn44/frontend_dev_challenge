@@ -33,4 +33,9 @@ class DealRepo extends GetxService {
     if (events.isEmpty) return;
     await api.sendAnalyticsBatch(events);
   }
+
+  Future<Map<String, dynamic>> reserveDeal(int dealId,
+      {int quantity = 1}) async {
+    return await api.reserveDeal(dealId, quantity: quantity);
+  }
 }

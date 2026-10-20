@@ -17,7 +17,12 @@ class CartScreen extends GetView<CartController> {
       appBar: AppBar(title: const Text('My bag')),
       body: Obx(() {
         if (cart.items.isEmpty) {
-          return const Center(child: Text('Your bag is empty'));
+          return const Center(
+            child: Text(
+              'Your bag is empty',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          );
         }
         return ListView.builder(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -141,21 +146,45 @@ class CartScreen extends GetView<CartController> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Row(
+                        Column(
                           children: [
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.remove_circle_outline),
-                              onPressed: () => cart.decrement(deal.id),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(Icons.remove_circle_outline,
+                                      size: 20),
+                                  onPressed: () => cart.decrement(deal.id),
+                                ),
+                                Text(
+                                  '${item.quantity}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(Icons.add_circle_outline,
+                                      size: 20),
+                                  onPressed: isItemExpired
+                                      ? null
+                                      : () => cart.add(deal),
+                                ),
+                              ],
                             ),
-                            Text('${item.quantity}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.add_circle_outline),
-                              onPressed:
-                                  isItemExpired ? null : () => cart.add(deal),
+                            TextButton.icon(
+                              onPressed: () => cart.remove(deal.id),
+                              icon: const Icon(Icons.delete_outline,
+                                  size: 14, color: Colors.red),
+                              label: const Text(
+                                'Remove',
+                                style:
+                                    TextStyle(fontSize: 11, color: Colors.red),
+                              ),
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                              ),
                             ),
                           ],
                         ),
@@ -224,7 +253,8 @@ class CartScreen extends GetView<CartController> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
                         )
                       : const Text('Checkout'),
                 ),

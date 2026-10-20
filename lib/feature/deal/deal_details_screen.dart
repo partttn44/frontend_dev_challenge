@@ -42,6 +42,9 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
       final isExpired =
           hasFlashSale && DateTime.now().isAfter(deal.flashSaleEndsAt!);
 
+      final quantityLeft = controller.quantityLeft ?? deal.quantityLeft;
+      final isOutOfStock = quantityLeft <= 0;
+
       return Scaffold(
         body: CustomScrollView(
           slivers: [
@@ -142,7 +145,8 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
                         Chip(
                           avatar:
                               const Icon(Icons.inventory_2_outlined, size: 16),
-                          label: Text('${controller.quantityLeft ?? '-'} left'),
+                          label: Text(
+                              isOutOfStock ? 'Sold out' : '$quantityLeft left'),
                         ),
                       ],
                     ),
@@ -217,12 +221,33 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
           child: SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: isExpired ? null : controller.addToCart,
+              onPressed:
+                  (isExpired || isOutOfStock || controller.isReserving.value)
+                      ? null
+                      : controller.addToCart,
               style: FilledButton.styleFrom(
-                backgroundColor: isExpired ? Colors.grey : null,
+                backgroundColor:
+                    (isExpired || isOutOfStock) ? Colors.grey : null,
               ),
-              icon: const Icon(Icons.add_shopping_cart),
-              label: Text(isExpired ? 'Deal Expired' : 'Add to bag'),
+              icon: controller.isReserving.value
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.add_shopping_cart),
+              label: Text(
+                isExpired
+                    ? 'Deal Expired'
+                    : isOutOfStock
+                        ? 'Out of Stock'
+                        : controller.isReserving.value
+                            ? 'Reserving...'
+                            : 'Add to bag',
+              ),
             ),
           ),
         ),
