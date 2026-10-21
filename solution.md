@@ -5,73 +5,73 @@
 ### RES-101 · Search shows results for the wrong query
 
 - **Root Cause:**
-  เกิดจากปัญหา **Asynchronous Race Condition** ในฟังก์ชัน Search เมื่อผู้ใช้งานพิมพ์ข้อความอย่างรวดเร็ว (**Rapid Typing / Keystroke Burst**) ทำให้เกิดการยิง **Asynchronous Requests** หลายชุดซ้อนกัน เนื่องจากโครงสร้าง **Network** จำลองมีความ **Latency** ที่แตกต่างกันในแต่ละ Request ทำให้ Request ที่ส่งออกไปก่อนหน้า (**Stale Request**) กลับประมวลผลเสร็จช้ากว่า Request ใหม่ และดึงข้อมูลชุดเก่ามาทับผลลัพธ์ปัจจุบันผ่านการเรียก `results.assignAll(found)` ส่งผลให้เกิด **UI Inconsistency**
+  Caused by an **Asynchronous Race Condition** in the search function when a user types text rapidly (**Rapid Typing / Keystroke Burst**), triggering multiple overlapping **Asynchronous Requests**. Due to varying latencies in the simulated network layer, earlier requests (**Stale Requests**) finished processing after newer requests and overwritten the current search results via `results.assignAll(found)`, leading to **UI Inconsistency**.
 
 - **Why this fix is correct & Alternatives considered:**
-  - _แนวทางที่เลือก (Latest Query Tracking Mechanism):_
-    เพิ่มตัวแปรสถานะภายใน (`_latestQuery`) เพื่อเก็บค่า Snapshot ของ Query ล่าสุด และใช้กลไก **Response Guard** (`if (_latestQuery == trimmedQuery)`) ตรวจสอบความถูกต้องของ State ก่อนที่จะอัปเดต Reactive State (`RxList`) วิธีนี้ช่วยการันตี **Data Integrity** โดยไม่ต้องแก้โครงสร้าง **Network** เบื้องหลัง และรักษาความลื่นไหลของ **UI Responsiveness**
-  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
-    - **Loading Lock / Request Throttling:** บล็อกไม่ให้ผู้ใช้งานพิมพ์ Query ใหม่จนกว่า Request เดิมจะสำเร็จ วิธีนี้ถูกปฏิเสธเนื่องจากส่งผลเสียต่อ **User Experience (UX)** ทำให้แอปพลิเคชันรู้สึกหน่วง (Sluggish)
-    - **RxDart `switchMap` / Debounce Operator:** แม้จะเป็นวิธีที่ทรงพลังในสถาปัตยกรรมแบบ **Reactive** แต่มีความซับซ้อนเกินความจำเป็นสำหรับขอบเขตงานนี้ การเทียบ Query ภายใน Controller จึง **Cost-effective** กว่า และลดความซับซ้อนในการจัดการ **Stream Subscription**
+  - _Chosen Approach (Latest Query Tracking Mechanism):_
+    Added an internal state variable (`_latestQuery`) to record a snapshot of the latest query and implemented a **Response Guard** (`if (_latestQuery == trimmedQuery)`) to verify state validity before updating the Reactive State (`RxList`). This guarantees **Data Integrity** without altering the underlying network structure and maintains smooth **UI Responsiveness**.
+  - _Rejected Alternatives:_
+    - **Loading Lock / Request Throttling:** Blocking user input until the pending request completes. Rejected because it negatively impacts **User Experience (UX)** by making the app feel sluggish.
+    - **RxDart `switchMap` / Debounce Operator:** While powerful in reactive architectures, it adds unnecessary complexity for this scope. Tracking queries inside the controller is more **Cost-effective** and simplifies **Stream Subscription** management.
 
 - **Edge Cases:**
-  - **Empty Query / Fast Deletion:** กรณีที่ผู้ใช้งานลบข้อความในช่อง Search อย่างรวดเร็ว จนกลายเป็น **Empty String** ระบบจะทำการเคลียร์แคชผลลัพธ์ (`results.clear()`) และรีเซ็ตสถานะ (`hasSearched` และ `isLoading`) ทันทีเพื่อป้องกัน **Memory Leak** และขยะข้อมูลบนหน้าจอ
+  - **Empty Query / Fast Deletion:** When a user rapidly deletes search text resulting in an **Empty String**, the system clears cached results (`results.clear()`) and resets state (`hasSearched` and `isLoading`) immediately to prevent **Memory Leaks** and stale UI data.
 
 ---
 
 ### RES-102 · App crashes after leaving My Orders screen
 
 - **Root Cause:**
-  เกิดจากปัญหา **Lifecycle Mismatch / Asynchronous Gap** และ **Zombie Timer (Memory Leak)** ภายใน Widget ย่อย `PickupCountdown` เมื่อผู้ใช้งานเปิดหน้า Orders Widget จะเริ่มรัน `Timer.periodic` เพื่อสั่งรีเฟรชหน้าจอทุกๆ 1 วินาที (`setState()`) แต่เมื่อผู้ใช้งานกดออกจากหน้านี้อย่างรวดเร็ว Widget จะถูก **Disposed** โดยที่ไม่มีการ Cancel ตัว Timer ส่งผลให้ Timer ยังคงทำงานค้างอยู่ใน **Background** และพยายามเรียก `setState()` บน Widget ที่ถูกทำลายไปแล้ว จนทำให้เกิด Crash พร้อม Error `setState() called after dispose()`
+  Caused by a **Lifecycle Mismatch / Asynchronous Gap** and a **Zombie Timer (Memory Leak)** inside the `PickupCountdown` sub-widget. Opening the Orders screen initiates a `Timer.periodic` to trigger screen refreshes every second (`setState()`). When navigating away quickly, the widget is **Disposed** without cancelling the timer. Consequently, the timer continues running in the **Background**, attempting to invoke `setState()` on a destroyed widget, causing a crash with `setState() called after dispose()`.
 
 - **Why this fix is correct & Alternatives considered:**
-  - _แนวทางที่เลือก:_
-    ประกาศตัวแปรเก็บ Reference ของ `Timer?` ภายใน State Class และเพิ่มคำสั่ง Cancel (`_timer?.cancel()`) ไว้ในฟังก์ชัน `dispose()` พร้อมใช้กลไก **Mounted Guard** (`if (!mounted) return`) เช็คก่อนเรียก `setState()` รวมถึงเพิ่มการเช็ค `if (isClosed) return` ใน `OrdersController` วิธีนี้ช่วยตัดการทำงานค้างใน **Background**, ป้องกัน **Memory Leak** ได้อย่างสมบูรณ์ และรักษาเสถียรภาพของ **UI Lifecycle**
-  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
-    - **การเช็ค `mounted` เพียงอย่างเดียวโดยไม่ Cancel Timer:** ช่วยป้องกัน Crash ตอนเรียก `setState()` ได้จริง แต่ปล่อยให้ Timer ทำงานวนลูปเปลือง **CPU** และส่งผลให้เกิด **Memory Leak** อย่างต่อเนื่อง
-    - **การดักจับ Error ด้วย `try-catch`:** เป็นการซ่อนอาการของ Bug (**Masking symptoms**) โดยไม่ได้แก้ที่ต้นเหตุและไม่สามารถหยุดยั้งปัญหาหน่วยความจำรั่วไหลได้
+  - _Chosen Approach:_
+    Declared a `Timer?` reference variable inside the State Class, added a cancellation call (`_timer?.cancel()`) in `dispose()`, integrated a **Mounted Guard** (`if (!mounted) return`) before invoking `setState()`, and added `if (isClosed) return` checks in `OrdersController`. This halts background execution, resolves **Memory Leaks**, and ensures **UI Lifecycle** stability.
+  - _Rejected Alternatives:_
+    - **Checking `mounted` without Cancelling the Timer:** Prevents crashes during `setState()`, but leaves the timer running in a loop, consuming **CPU** and causing ongoing **Memory Leaks**.
+    - **Wrapping with `try-catch`:** Masks symptoms without addressing the root cause or stopping memory leaks.
 
 - **Edge Cases:**
-  - **Rapid Screen Toggling:** กรณีที่ผู้ใช้งานกดสลับเข้าและออกจากหน้า Orders อย่างรวดเร็ว การเก็บบันทึก Reference ของ Timer และสั่ง Cancel ใน `dispose()` จะช่วยป้องกันไม่ให้เกิด **Multiple Active Timers / Zombie Timers** สะสมในหน่วยความจำ
+  - **Rapid Screen Toggling:** Rapidly navigating in and out of the Orders screen is handled safely by cancelling existing timer references in `dispose()`, preventing **Multiple Active Timers / Zombie Timers** from accumulating in memory.
 
 ---
 
 ### RES-103 · Requests accumulate over time while browsing
 
 - **Root Cause:**
-  เกิดจากปัญหา **Ghost Listener / Unremoved Reactive Worker** ภายใน `DealDetailsController` โดยในฟังก์ชัน `onInit()` มีการผูก Listener เข้ากับ Global Service อย่าง `cartService.itemCount` ผ่านฟังก์ชัน `ever(...)` เพื่อคอย Re-check Stock แบบ **Real-time** แต่เมื่อผู้ใช้งานกดออกจากหน้าจอ Deal Details ตัว Controller จะถูกทำลายผ่าน `onClose()` โดยที่**ไม่มีการ Unregister / Dispose** ตัว Worker ส่งผลให้เกิด **Zombie Controller / Ghost Listener** ค้างอยู่ในหน่วยความจำ เมื่อ Cart มีการเปลี่ยนแปลงในภายหลัง ระบบจึงยิง Request `GET /deals/:id` ออกไปพร้อมกันทีละมากๆ (ขอข้อมูล Deal ทุกตัวที่เคยเปิดดูมาตลอดทั้ง Session) ทำให้ Requests สะสมเพิ่มขึ้นเรื่อยๆ และแอปทำงานช้าลง
+  Caused by a **Ghost Listener / Unremoved Reactive Worker** inside `DealDetailsController`. In `onInit()`, a listener was bound to a global service (`cartService.itemCount`) via `ever(...)` to re-check stock in **Real-time**. Leaving the Deal Details screen destroys the controller via `onClose()` without **Unregistering / Disposing** the worker, leaving a **Zombie Controller / Ghost Listener** in memory. Subsequent cart changes triggered bursts of `GET /deals/:id` requests (fetching every deal viewed throughout the session), causing request accumulation and performance degradation.
 
 - **Why this fix is correct & Alternatives considered:**
-  - _แนวทางที่เลือก:_
-    ประกาศตัวแปรเก็บ Reference ของ Worker (`Worker? _cartWorker`) และเพิ่มคำสั่ง Dispose (`_cartWorker?.dispose()`) ไว้ในฟังก์ชัน `onClose()` ของ Controller วิธีนี้ช่วยตัดการเชื่อมต่อ Listener ทันทีที่หน้าจอถูกปิด, ป้องกัน **Memory Leak**, และหยุดยั้งปัญหา Requests สะสมได้อย่างสมบูรณ์ โดยยังคงรักษาฟีเจอร์การอัปเดต Stock แบบ **Real-time** ไว้ได้ครบถ้วน
-  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
-    - **เลิกใช้ `ever` และ Fetch ข้อมูลครั้งเดียวตอนเปิดหน้าจอ:** ช่วยตัดปัญหา Listener ค้างได้ แต่ขัดกับ **Business Requirement** ที่ต้องการให้ผู้ใช้เห็นข้อมูล Stock ล่าสุดเสมอเมื่อ Cart เปลี่ยนแปลง (ป้องกัน **Stale Data**)
+  - _Chosen Approach:_
+    Declared a worker reference (`Worker? _cartWorker`) and added a disposal call (`_cartWorker?.dispose()`) in `onClose()`. This unbinds the listener immediately upon closing the screen, prevents **Memory Leaks**, and eliminates request accumulation while maintaining **Real-time** stock updates.
+  - _Rejected Alternatives:_
+    - **Removing `ever` and Fetching Data Once On Open:** Eliminates lingering listeners but violates the **Business Requirement** to display up-to-date stock whenever the cart changes (preventing **Stale Data**).
 
 - **Edge Cases:**
-  - **Rapid Navigation:** กรณีที่ผู้ใช้งานกดเข้าและออกจากหน้า Deal ต่างๆ สลับกันอย่างรวดเร็ว การจัดการ Dispose Workers ใน `onClose()` จะช่วยป้องกันไม่ให้เกิด **Multiple Accumulated Requests** ในระบบ
+  - **Rapid Navigation:** Rapidly switching between deal screens is handled cleanly by disposing workers in `onClose()`, preventing **Multiple Accumulated Requests**.
 
 ---
 
 ### RES-104 · Duplicate deals shown in home feed
 
 - **Root Cause:**
-  เกิดจากปัญหา **Pagination Concurrency / Concurrent Pagination Requests** ใน `HomeController` ในระหว่างที่ผู้ใช้งานเลื่อนหน้าจอลงเพื่อโหลดข้อมูลเพิ่มเติม (`loadMore()`) และระบบกำลังรอผลลัพธ์จาก Network (`await dealRepo.fetchDeals(page: _page)`) ข้อมูล Real-time บน Backend อาจมีการเปลี่ยนแปลง ลบ หรือสลับลำดับ ส่งผลให้ข้อมูลในหน้าถัดไปที่ดึงมามี Deal บางตัวซ้ำซ้อนกับข้อมูลหน้าก่อนหน้า เมื่อนำมาต่อท้ายด้วยคำสั่ง `deals.addAll(res.items)` จึงทำให้หน้าจอแสดงผล Deal ซ้ำกัน
+  Caused by **Pagination Concurrency / Concurrent Pagination Requests** in `HomeController`. While scrolling down to load more data (`loadMore()`) and awaiting network responses (`await dealRepo.fetchDeals(page: _page)`), real-time backend updates or order re-shuffling caused items on subsequent pages to overlap with previously loaded pages. Appending them directly via `deals.addAll(res.items)` resulted in duplicate deal cards on the feed.
 
 - **Why this fix is correct & Alternatives considered:**
-  - _แนวทางที่เลือก (Client-side Deduplication):_
-    เพิ่มกระบวนการกรองข้อมูลซ้ำก่อนนำเข้าสู่ Reactive List โดยการแม็พตรวจสอบ Unique Identifier (`deal.id`) ของรายการที่มีอยู่เดิม (`existingIds`) และคัดเลือกเฉพาะรายการใหม่ที่ไม่ซ้ำกัน (`uniqueNewItems`) ก่อนเรียก `deals.addAll(...)` วิธีนี้ช่วยการันตีความสะอาดของข้อมูลฝั่ง Client โดยไม่ต้องพึ่งพา Backend อย่างเดียว
-  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
-    - **การพึ่งพา Backend ให้จัดระเบียบข้อมูลให้อย่างเดียว:** ในระบบสตรีมมิ่งหรือระบบ Deal แบบ Real-time การเหลื่อมล้ำของข้อมูลระหว่างหน้าเป็นสิ่งที่เกิดขึ้นได้เสมอ การมี Client-side Guard จึงเป็นแนวทางที่ปลอดภัยที่สุด
+  - _Chosen Approach (Client-side Deduplication):_
+    Added a client-side deduplication check before appending items to the reactive list. Verified existing unique identifiers (`deal.id`) from `existingIds` and filtered out duplicates (`uniqueNewItems`) before calling `deals.addAll(...)`. This ensures clean client-side data without relying solely on the backend.
+  - _Rejected Alternatives:_
+    - **Relying Solely on Backend Ordering:** In real-time streaming or deal systems, pagination overlaps can occur. A client-side guard provides the safest defense.
 
 - **Edge Cases:**
-  - **Rapid Scrolling:** กรณีที่ผู้ใช้งาน Scroll ฟีดขึ้นลงอย่างรวดเร็ว ระบบ Deduplication จะช่วยป้องกันไม่ให้ข้อมูลซ้ำซ้อนเล็ดลอดแสดงผลบนหน้าจอ UI
+  - **Rapid Scrolling:** Rapidly scrolling up and down the feed is protected by deduplication, preventing duplicate items from leaking into the UI.
 
 ---
 
 ### RES-105 · Home feed janky and memory usage grows over time
 
 - **Root Cause:**
-  เกิดจากปัญหา **Excessive Rebuilds** และ **Unbounded Memory Allocations** ฝั่ง UI โดยเฉพาะการครอบ `Obx` เป็นวงกว้างรอบ `Scaffold` ใน `HomeScreen` ส่งผลให้ทุกครั้งที่มีการ Scroll (`scrollOffset` เปลี่ยนแปลง) วิดเจ็ตทั้งหมดในหน้าจอจะถูก Rebuild ใหม่ซ้ำซ้อนอย่างต่อเนื่อง ทำให้ **UI Thread** ประมวลผลไม่ทันเฟรม (เกิน 16.6ms) จนเกิดอาการ **Jank (Frame Drops)** และทำให้ Garbage Collector (GC) ต้องทำงานอย่างหนักจน Memory พุ่งสูงขึ้นเรื่อยๆ
+  Caused by **Excessive Rebuilds** and **Unbounded Memory Allocations** on the UI side—specifically wrapping `Obx` broadly around `Scaffold` in `HomeScreen`. Every scroll event (`scrollOffset` change) forced all widgets on the screen to rebuild continuously, overloading the **UI Thread** past frame budgets (>16.6ms), resulting in **Jank (Frame Drops)** and heavy Garbage Collection (GC) activity that continuously inflated memory usage.
 
 - **Performance Comparison (Flutter DevTools):**
   - **Before Fix (Janky Frame Drops):**
@@ -80,136 +80,145 @@
     ![After Fix Performance](./assets/screenshots/new_code_smooth.png)
 
 - **Why this fix is correct & Alternatives considered:**
-  - _แนวทางที่เลือก (UI Optimization & Scoped Reactivity):_
-    จำกัดขอบเขตของ `Obx` ให้แคบที่สุดเฉพาะส่วนที่จำเป็น, ปรับปรุงการเรนเดอร์ด้วยโครงสร้างที่เหมาะสม, เติม `const` Constructors สำหรับ Static Widgets และกำหนดขนาด Cache ของรูปภาพเพื่อควบคุม Memory Heap
-  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
-    - **การแก้ที่ Controller เพียงอย่างเดียว:** ไม่สามารถแก้ปัญหาได้ เพราะต้นตอของการเรนเดอร์เฟรมดรอปเกิดจากการสั่ง Rebuild วิดเจ็ตฝั่ง UI ที่ถี่เกินไป
+  - _Chosen Approach (UI Optimization & Scoped Reactivity):_
+    Narrowed `Obx` scopes strictly to reactive elements, optimized layout rendering structures, added `const` constructors for static widgets, and configured image cache limits to manage heap memory.
+  - _Rejected Alternatives:_
+    - **Fixing Only Controller Logic:** Insufficient, as the root cause of dropped frames stems from excessive UI widget rebuilds.
 
 - **Edge Cases:**
-  - **Rapid Fling Scrolling:** การปัดฟีดลงอย่างรวดเร็ว ระบบ Lazy Loading และการลดจำนวน Rebuild ซ้ำซ้อนจะช่วยป้องกันไม่ให้ Frame Rate ตกร่วงลงไปอยู่ในระดับ Jank
+  - **Rapid Fling Scrolling:** Rapid flinging is maintained cleanly through lazy loading and reduced rebuilds, preserving smooth frame rates.
 
 ---
 
 ### RES-106 · Wrong pickup times; "Pickup today" filter misses deals
 
 - **Root Cause:**
-  เกิดจากปัญหา **Timezone Mismatch (UTC vs Local Time)** และการเปรียบเทียบวันที่ไม่รัดกุม โดยฟังก์ชัน `DateTime.parse()` จะแปลงสตริงเวลา ISO-8601 ที่ส่งมาจาก Backend (ซึ่งเป็นเวลามาตรฐาน UTC ลงท้ายด้วย `Z`) ให้เป็น `DateTime` ในรูปแบบ UTC โดยตรงโดยไม่ได้แปลงเป็นเวลาท้องถิ่น (`.toLocal()`) ส่งผลให้เวลา `start` และ `end` คลาดเคลื่อนไปจากเวลาจริงตามค่า Offset (เช่น ตามเวลาประเทศไทย UTC+7 เลื่อนไปหลายชั่วโมง) นอกจากนี้ ฟังก์ชันเช็ควัน `isToday` ยังใช้การเปรียบเทียบแค่เลข `day` เดี่ยวๆ (`start.day == DateTime.now().day`) โดยไม่ได้เทียบปีและเดือน ทำให้ตัวกรอง "Pickup today" คำนวณวันผิดพลาดและปัดตกร้านที่มีสิทธิ์รับสินค้าในวันนี้ไปอย่างไม่ถูกต้อง
+  Caused by a **Timezone Mismatch (UTC vs Local Time)** and imprecise date comparison logic. `DateTime.parse()` converted ISO-8601 UTC strings from the backend (ending in `Z`) into UTC `DateTime` instances without adjusting to local time (`.toLocal()`). This shifted `start` and `end` times by local offset hours (e.g., UTC+7 in Thailand). Additionally, `isToday` checked only the `day` integer (`start.day == DateTime.now().day`) without matching year and month, miscalculating pickup days and incorrectly filtering out valid deals.
 
 - **Why this fix is correct & Alternatives considered:**
-  - _แนวทางที่เลือก (Local Time Conversion & Strict Date Matching):_
-    เพิ่มคำสั่ง `.toLocal()` ทันทีเมื่อ Parse ค่าเวลาจาก JSON ใน `PickupWindowModel` เพื่อให้เวลาตรงกับเขตเวลาของอุปกรณ์ผู้ใช้จริง และปรับเงื่อนไข `isToday` ให้ตรวจสอบครบทั้งปี, เดือน, และวัน (`year`, `month`, `day`) วิธีนี้ช่วยแก้ไขปัญหาการแสดงผลเวลาหน้าร้านให้ถูกต้องตรงตามเวลาท้องถิ่น และทำให้ฟิลเตอร์ "Pickup today" กรองข้อมูลได้อย่างแม่นยำ 100% โดยไม่ต้องพึ่งพาการแก้ Backend
-  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
-    - **ให้ Backend ส่งข้อมูลเป็น Local Time String โดยตรง:** ทำไม่ได้ตามกฎข้อบังคับของโปรเจกต์ที่ห้ามแก้ไขไฟล์ฝั่ง Backend (`fake_api_service.dart` หรือโครงสร้างข้อมูลเดิม)
-    - **การคำนวณ Offset ชดเชยเวลาด้วยมือแบบ Fix (+7 ชั่วโมง):** เป็นวิธีที่เปราะบางและใช้งานได้เฉพาะผู้ใช้ในประเทศไทยเท่านั้น หากมีการเปลี่ยนโซนเวลาหรือใช้งานข้ามประเทศจะพังทันที การใช้ `.toLocal()` ของ Dart จึงเป็นมาตรฐานที่ยืดหยุ่นและถูกต้องที่สุด
+  - _Chosen Approach (Local Time Conversion & Strict Date Matching):_
+    Applied `.toLocal()` immediately upon parsing JSON dates in `PickupWindowModel` to match device local time zones, and updated `isToday` to validate `year`, `month`, and `day`. This displays accurate local pickup windows and ensures 100% filter accuracy without requiring backend modifications.
+  - _Rejected Alternatives:_
+    - **Requiring Backend Local Time Strings:** Prohibited by project guidelines against modifying backend files (`fake_api_service.dart` or original data schemas).
+    - **Hardcoding Timezone Offsets (+7 Hours):** Fragile and limited to Thailand. Breaks when changing timezones or running internationally. Using Dart's `.toLocal()` is standard and robust.
 
 - **Edge Cases:**
-  - **Midnight Crossings / Late Night Deals:** กรณีที่เวลารับสินค้าคาบเกี่ยวช่วงเที่ยงคืน (เช่น ดึกสว่างของอีกวัน) การเทียบปี เดือน และวันแบบครบถ้วนช่วยป้องกันไม่ให้ระบบจำแนกวันสลับกันระหว่างวันปัจจุบันกับวันถัดไป
+  - **Midnight Crossings / Late Night Deals:** Deals spanning across midnight are properly evaluated by comparing full year, month, and day fields.
 
 ---
 
 ### RES-107 · Deep link opens to a crash
 
 - **Root Cause:**
-  เกิดจากปัญหา **Missing Route Arguments / State Mismatch** เมื่อเปิดดีลผ่านหน้า Homescreen แอปจะส่งโมเดลข้อมูลผ่าน `arguments` (`Get.toNamed(..., arguments: deal)`) ทำให้หน้าจอรายละเอียดดีลอ่านค่าได้ทันที แต่เมื่อเปิดผ่าน Deep Link (เช่น ผ่าน Push Notification หรือสคริปต์จำลอง `rescu://open/deal?id=42&source=push`) ระบบจะนำทางผ่าน URL โดยตรงโดยไม่มีการแนบ Object ของดีลมาด้วย ทำให้ `Get.arguments` มีค่าเป็น `null` และเมื่อโค้ดเดิมพยายามแคสต์ค่าดังกล่าวเป็น `DealModel` โดยตรง (`Get.arguments as DealModel`) จึงเกิดข้อผิดพลาดประเภท `type 'Null' is not a subtype of type 'DealModel'` ส่งผลให้แอป Crash ทันทีในโหมด Debug
+  Caused by **Missing Route Arguments / State Mismatch**. Opening a deal from the homepage passes data via `arguments` (`Get.toNamed(..., arguments: deal)`), allowing the details screen to parse it immediately. Opening via Deep Links (e.g., push notifications or `rescu://open/deal?id=42&source=push`) navigates via URL parameters without an attached object. `Get.arguments` evaluates to `null`, and casting it directly (`Get.arguments as DealModel`) throws `type 'Null' is not a subtype of type 'DealModel'`, crashing the app in debug builds.
 
 - **Why this fix is correct & Alternatives considered:**
-  - _แนวทางที่เลือก (Fallback Data Fetching & Dual-source Resolution):_
-    ปรับปรุง `DealDetailsController` และ `DealDetailsScreen` ให้รองรับทั้งสองกรณี โดยตรวจสอบว่าหากมี `Get.arguments` ให้ใช้งานได้ทันที แต่ถ้าไม่มี (`null`) ให้ดึงรหัส `id` จาก Route Parameters หรือ Query Parameters (`?id=42`) แล้วเรียกใช้งาน Repository (`dealRepo.fetchById(dealId)`) เพื่อโหลดข้อมูลดีลจาก Backend มาแสดงผลผ่านสถานะ Reactive (`Rxn<DealModel>`) พร้อมรองรับสถานะกำลังโหลด (`isLoading`) วิธีนี้ช่วยให้การเปิดผ่าน Deep Link ทำงานได้อย่างสมบูรณ์ ปลอดภัย และไม่ผิดข้อกำหนดของโจทย์
-  - _ทางเลือกอื่นที่ปฏิเสธ (Rejected Alternatives):_
-    - **การแสดงหน้าจอ Error หรือ Fallback Screen แทน:** ผิดข้อกำหนดของโจทย์ที่ระบุไว้ชัดเจนว่า _การแสดงหน้าจอ Error หรือ Fallback ไม่ถือว่าเป็นวิธีแก้ปัญหาที่ยอมรับได้_ ลิงก์จะต้องพาผู้ใช้งานไปยังหน้าดีลที่ใช้งานได้จริง
-    - **การบังคับพาส Object ผ่าน Deep Link:** เป็นไปไม่ได้ในทางปฏิบัติ เนื่องจากระบบภายนอก (เช่น Push Notification หรือ Browser Intents) สามารถส่งมาได้แค่รูปแบบ URL String เท่านั้น
+  - _Chosen Approach (Fallback Data Fetching & Dual-source Resolution):_
+    Updated `DealDetailsController` and `DealDetailsScreen` to support both pathways. If `Get.arguments` exists, it uses the passed object. If `null`, it extracts the `id` from route or query parameters (`?id=42`) and fetches data via `dealRepo.fetchById(dealId)` into a reactive state (`Rxn<DealModel>`) with loading indicators (`isLoading`). This resolves deep links safely and meets requirements.
+  - _Rejected Alternatives:_
+    - **Displaying an Error or Fallback Screen:** Violates project requirements stating error/fallback screens are unacceptable solutions; deep links must land on a working deal page.
+    - **Forcing Object Payloads over Deep Links:** Technically impossible for external deep link launchers (e.g., push notifications or URL intents).
 
 - **Edge Cases:**
-  - **Invalid or Expired Deal ID:** กรณีที่ Deep Link ส่งรหัสดีลที่ไม่ถูกต้องหรือไม่มีอยู่จริงในแคตตาล็อก ระบบจะดักจับข้อผิดพลาดและแสดงผลข้อความแจ้งเตือนที่เข้าใจง่ายภายในหน้าจออย่างปลอดภัยโดยไม่ทำให้แอปเกิดอาการค้างหรือพัง
+  - **Invalid or Expired Deal ID:** If an invalid deal ID is provided, errors are caught gracefully, displaying a user-friendly error message within the screen without crashing.
 
 ---
 
 ## [F-1] Live Flash-Sale Countdowns
 
-### ปัญหา (Problem)
+### Problem
 
-1. **Live Countdown & Persistence:** การนับถอยหลังเวลา Flash Sale ต้องอิงกับเวลาจริง (`DateTime.now()`) เพื่อให้เมื่อผู้ใช้เปิดแอปใหม่หรือสลับหน้าจอ ตัวเลขเวลายังคงเดินต่อเนื่องและแม่นยำตลอดเวลา
-2. **Expired Deal Handling:** เมื่อดีล Flash Sale หมดอายุ (`Expired`) ต้องล็อกไม่ให้ผู้ใช้กดซื้อหรือเพิ่มลงตะกร้าได้อีก และหากมีดีลที่หมดอายุค้างอยู่ในตะกร้า ต้องทำการถอดถอนออกอัตโนมัติพร้อมแสดงข้อความแจ้งเตือนที่ชัดเจน
-3. **UI & State Render Bug:** การสั่งลบรายการสินค้าในตะกร้าหรือเรียกแสดง `Get.snackbar` ขณะที่ Widget กำลังเรนเดอร์ ทำให้เกิดข้อผิดพลาดประเภท `ErrorSummary` และปัญหาการ Rebuild ซ้ำซ้อน
+1. **Live Countdown & Persistence:** Countdown timers must sync with real time (`DateTime.now()`) so remaining durations remain accurate upon re-opening the app or switching screens.
+2. **Expired Deal Handling:** Expired flash deals (`Expired`) must disable purchasing/adding to bag, and any expired items remaining in the bag must be removed automatically with clear notifications.
+3. **UI & State Render Bug:** Removing cart items or triggering `Get.snackbar` during widget build phases causes `ErrorSummary` build exceptions and unnecessary rebuild loops.
 
-### แนวทางแก้ไข (Solution)
+### Solution
 
-1. **Absolute Time Comparison:** ออกแบบการคำนวณเวลาโดยเปรียบเทียบ `flashSaleEndsAt` กับ `DateTime.now()` ผ่าน `Timer.periodic` ใน `FlashCountdownBadge` ช่วยให้การแสดงผลเวลานับถอยหลังแม่นยำและต่อเนื่องแม้ปิด/เปิดแอปใหม่
-2. **Controller-Level Initialization:** จัดการตรวจสอบและกวาดล้างดีล Flash Sale ที่หมดอายุเมื่อเข้าสู่หน้าตะกร้าผ่าน `CartController.onInit()` โดยใช้ `Future.microtask` เพื่อลบรายการและแจ้งเตือนผู้ใช้อย่างปลอดภัยนอกช่วงเวลา `build` เฟรม
-3. **UI State & Action Lockdown:** อัปเดต `DealDetailsScreen` และ `CartScreen` ให้รองรับการปิดใช้งานปุ่มซื้อ/เพิ่มสินค้า (Disabled State) รวมถึงเปลี่ยนสีการ์ดเป็นโทนเทาทันทีเมื่อดีลหมดอายุ เพื่อป้องกันการทำธุรกรรมบนดีลที่สิ้นสุดระยะเวลาแล้ว
+1. **Absolute Time Comparison:** Calculated remaining durations by comparing `flashSaleEndsAt` with `DateTime.now()` inside a `Timer.periodic` within `FlashCountdownBadge`, guaranteeing precise timer updates across app lifecycle states.
+2. **Controller-Level Initialization:** Executed expired item cleanup in `CartController.onInit()` using `Future.microtask` to safely remove expired items and display alerts outside active `build` frames.
+3. **UI State & Action Lockdown:** Updated `DealDetailsScreen` and `CartScreen` to disable purchase buttons and style card backgrounds in grey tones upon expiry, preventing transactions on expired deals.
 
 ---
 
 ## [F-2] Impression Tracking with Batch Analytics
 
-### ปัญหา (Problem)
+### Problem
 
-1. **Visibility & Tracking:** ต้องการระบบตรวจสอบการมองเห็นการ์ดดีลเมื่อแสดงผลบนหน้าจอ (`HomeScreen`) โดยไม่ให้ส่งข้อมูลซ้ำซ้อน (`Deduplication`) ในเซสชันเดียวกัน
-2. **Network Optimization (Batching):** การส่งข้อมูล Analytics แบบทีละรายการ (`Single Request`) จะสร้างภาระให้กับ Network และเปลืองทรัพยากรเมื่อผู้ใช้งานเลื่อนหน้าจออย่างรวดเร็ว
+1. **Visibility & Tracking:** Required view analytics tracking on deal cards in `HomeScreen` without duplicate logging (`Deduplication`) within the same session.
+2. **Network Optimization (Batching):** Dispatching analytics single-item HTTP requests overheads network resources during fast scrolling.
 
-### แนวทางแก้ไข (Solution)
+### Solution
 
-1. **Visibility Detection:** ใช้แพ็กเกจ `visibility_detector` ห่อหุ้ม `DealCard` พร้อมตั้งค่าเงื่อนไข `visibleFraction >= 0.5` เพื่อส่งสัญญาณบันทึก Impression เมื่อปรากฏบนหน้าจอเกิน 50%
+1. **Visibility Detection:** Wrapped `DealCard` with `visibility_detector` configured with `visibleFraction >= 0.5` to track impressions once a card is at least 50% visible for 1 second continuously.
 2. **Controller-Level Queue & Batching:**
-   - จัดการเก็บ State การนับผ่าน `_trackedImpressions` (Set) เพื่อป้องกันการส่งซ้ำ
-   - สร้างคิวสะสม `_pendingAnalyticsEvents` และกำหนดขนาด Batch ไว้อย่างถูกต้องที่ **10 อีเวนต์** (`_batchSize = 10`)
-   - เรียกใช้ `DealRepo.sendAnalyticsBatch` เพื่อส่งข้อมูลเป็นชุดผ่าน `FakeApiService.sendAnalyticsBatch`
-   - จัดการส่งข้อมูลที่ค้างอยู่ในคิวโดยอัตโนมัติเมื่อมีการ Refresh หรือเมื่อออกจากหน้าจอ (`onClose`) ผ่านฟังก์ชัน `_flushAnalyticsBatch()`
+   - Tracked impression state via `_trackedImpressions` (Set) to avoid duplicates.
+   - Built a queue (`_pendingAnalyticsEvents`) capped at **10 events** (`_batchSize = 10`).
+   - Dispatched events via `DealRepo.sendAnalyticsBatch` to `FakeApiService.sendAnalyticsBatch`.
+   - Flushed unsent queued events automatically upon refresh or screen closure (`onClose`) via `_flushAnalyticsBatch()`.
+
+---
 
 ## [F-3] Stock Reservations with Optimistic UI & Automatic Rollback
 
-### ปัญหา (Problem)
+### Problem
 
-1. **Perceived Latency & Slow UX:** ผู้ใช้งานต้องรอผลตอบกลับจาก Network (API Latency 350-1100ms) ก่อนที่ปุ่ม Add to Bag จะตอบสนองและอัปเดตจำนวนสินค้า ทำให้แอปดูหน่วงและไม่ลื่นไหล
-2. **Race Condition & Overbooking:** สินค้าจำกัดจำนวน หากมีผู้ใช้งานกดจองพร้อมกันหลายคน เซิร์ฟเวอร์อาจปฏิเสธการจองด้วย Error 409 (Conflict / Out of stock) ซึ่งฝั่ง Client ต้องจัดการสถานะให้ตรงกัน
-3. **State Consistency:** หากการจองบนเซิร์ฟเวอร์ล้มเหลว สถานะสต็อกคงเหลือบนหน้าจอและรายการสินค้าในตะกร้าจะต้องถูกดึงกลับ (Rollback) อัตโนมัติทันทีพร้อมแจ้งเตือนผู้ใช้
+1. **Perceived Latency & Slow UX:** Waiting for synchronous network responses (350-1100ms latency) before updating UI state makes the app feel sluggish.
+2. **Race Condition & Overbooking:** When stock is contended, server-side reservation attempts may fail with 409 Conflict/Out of Stock errors, requiring client-side state reconciliation.
+3. **State Consistency:** Failed backend reservations require rolling back on-screen stock counts and removing items from the cart automatically while notifying the user.
 
-### แนวทางแก้ไข (Solution)
+### Solution
 
 1. **Optimistic UI Pattern:**
-   - เพิ่มเมธอด `copyWith` ใน `DealModel` เพื่อสร้างสำเนาข้อมูลพร้อมอัปเดตค่า `quantityLeft` ทันที
-   - อัปเดต UI หน้า `DealDetailsScreen` และเพิ่มสินค้าลง `CartService` ทันทีที่ผู้ใช้กดปุ่ม โดยไม่ต้องรอ API Response
+   - Added `copyWith` to `DealModel` for instant local `quantityLeft` state mutation.
+   - Updated UI on `DealDetailsScreen` and added items to `CartService` immediately without waiting for network responses.
 2. **Background API & Reservation Association:**
-   - ยิง API `reserveDeal` ใน Background พร้อมล็อกสถานะปุ่มด้วย `isReserving` เพื่อป้องกันการกดซ้ำซ้อน
-   - แนบข้อมูลการจอง (`reservation`) เข้ากับ `CartItemModel` ในตะกร้า เพื่อเตรียมส่งต่อไปยังขั้นตอน `CartController.checkout()`
+   - Initiated `reserveDeal` API calls in the background with `isReserving` guards to prevent double-tapping.
+   - Attached reservation details (`reservation`) to `CartItemModel` in the cart for checkout processing.
 3. **Automatic Rollback & Error Handling:**
-   - ดักจับ `ApiException` เมื่อการจองไม่สำเร็จ (เช่น ติดเงื่อนไขจำลองเซิร์ฟเวอร์หรือสินค้าหมด) ระบบจะเรียกฟังก์ชัน Rollback เพื่อคืนค่า `quantityLeft` เดิมบนหน้าจอ และสั่ง `cartService.remove(deal.id)` เพื่อถอดสินค้าออกจากตะกร้าทันที พร้อมแสดง Snackbar แจ้งเตือนข้อความจริงจาก Server
+   - Caught `ApiException` on reservation failures, restored original `quantityLeft` state, removed items via `cartService.remove(deal.id)`, and displayed server error messages via snackbars.
 
-### การตัดสินใจในส่วนที่กำหนดรายละเอียดไม่ครบถ้วน (Underspecified Product Decision)
+### Underspecified Product Decision
 
-- **สถานการณ์:** เมื่อการจองสินค้าในตะกร้าหมดอายุ (Duration > 5 minutes) ระหว่างที่ผู้ใช้งานยังใช้งานอยู่ในแอปหรือกำลังเตรียมตัว Checkout
-- **การตัดสินใจ (Decision):** ระบบจะทำเครื่องหมายและแสดงแถบเตือนสถานะ "Reservation expired" บนรายการสินค้าในตะกร้าทันที พร้อมทั้งบล็อกปุ่ม Checkout และป้องกันไม่ให้ส่ง `reservationId` ที่หมดอายุไปยังระบบสั่งซื้อ
-- **เหตุผล (Justification):**
-  1. ป้องกันข้อผิดพลาด `410 Reservation Expired` จากฝั่ง Backend ที่จะทำให้ผู้ใช้เกิดความสับสน
-  2. ช่วยให้ UX มีความโปร่งใส ผู้ใช้รับรู้ทันทีว่าสิทธิ์การจองหลุดลอยไปแล้ว และสามารถตัดสินใจจัดการตะกร้าสินค้าของตนเองต่อได้ (เช่น กดลบหรือเลือกใหม่)
+- **Scenario:** Reservation expires (duration > 5 minutes) while the user is actively in the app or preparing for checkout.
+- **Decision:** Display an explicit "Reservation expired" banner on cart item cards, disable the checkout button, and block submitting expired `reservationId` instances.
+- **Justification:**
+  1. Prevents confusing `410 Reservation Expired` backend errors post-checkout attempt.
+  2. Enhances UX transparency by clearly informing users when holds expire, enabling immediate cart management (removal or re-reservation).
 
 ---
 
 ## 2. AI Usage Log
 
 - **Tools Used:**
-  - **Gemini :** ใช้ร่วมกันในกระบวนการ Development เพื่อช่วยวิเคราะห์ Architecture, ตรวจสอบที่มาของ **Asynchronous Race Condition**, **Memory Leak**, รวมถึงช่วยออกแบบแนวทางการจัดการ **Widget Lifecycle** และ **GetX Workers**
+  - **Gemini:** Utilized during development for architecture analysis, diagnosing **Asynchronous Race Conditions** and **Memory Leaks**, and designing **Widget Lifecycle** and **GetX Workers** management.
 
-- **Concrete Examples of misleading AI suggestions:**
-  1. _ตัวอย่างที่ 1 (การแนะนำวิธีแก้ Race Condition ที่ซับซ้อนเกินไป - RES-101):_
-     - **คำแนะนำที่ผิดพลาดของ AI:** แนะนำให้ติดตั้ง External Package เพิ่มเติมและ Rewrite โครงสร้าง Controller ไปใช้ RxDart `switchMap` เพื่อตัด Stream Request เก่าทิ้ง
-     - **วิธีจับจุด:** พบว่าเป็นการเพิ่ม Dependency ใหม่ที่ไม่จำเป็น และเสี่ยงที่จะกระทบกับ Core Architecture ของโปรเจกต์ที่ใช้ GetX
-     - **แนวทางที่แก้ไขแทน:** ปรับมาใช้กลไก **Latest Query Tracking** (`_latestQuery`) พร้อม **Response Guard** ภายใน Controller ซึ่งมีความเรียบง่ายและตรงจุดกว่าโดยไม่ต้องเพิ่ม Package
-  2. _ตัวอย่างที่ 2 (การแก้ Crash จาก Timer โดยละเลย Memory Leak - RES-102):_
-     - **คำแนะนำที่ผิดพลาดของ AI:** แนะนำให้ใส่แค่เงื่อนไข `if (mounted) setState(...)` คลุมไว้ในลูป `Timer.periodic` เพื่อกัน Crash
-     - **วิธีจับจุด:** ตรวจสอบผ่าน **DevTools** แล้วพบว่าแอปไม่ Crash จริง แต่ Timer ยังคงรันอยู่ใน Background และสร้าง **Zombie Timers** สะสมทุกครั้งที่เปิดหน้านี้ใหม่
-     - **แนวทางที่แก้ไขแทน:** ใช้การประกาศตัวแปร `Timer?` และสั่ง Cancel ด้วย `_timer?.cancel()` ในฟังก์ชัน `dispose()` ตามมาตรฐาน **Flutter Lifecycle**
+- **Concrete Examples of Misleading AI Suggestions:**
+  1. _Example 1 (Over-engineered Race Condition Fix - RES-101):_
+     - **Misleading Suggestion:** Recommended installing third-party packages and rewriting the controller with RxDart `switchMap` to cancel old stream requests.
+     - **Detection:** Identified as an unnecessary external dependency that adds risk to the core GetX setup.
+     - **Correction:** Implemented a **Latest Query Tracking** (`_latestQuery`) guard inside the controller, resolving the issue cleanly without new packages.
+  2. _Example 2 (Masking Crash without Fixing Memory Leak - RES-102):_
+     - **Misleading Suggestion:** Suggested wrapping `setState(...)` in `Timer.periodic` with `if (mounted)`.
+     - **Detection:** Profiling via **DevTools** revealed that while crashes stopped, timers continued running in the background, accumulating **Zombie Timers**.
+     - **Correction:** Stored a `Timer?` reference and cancelled it in `dispose()` via `_timer?.cancel()`, adhering to **Flutter Lifecycle** best practices.
 
 ---
 
 ## 3. Design Questions
 
-_(ไม่มีคำถามเฉพาะเจาะจงเพิ่มเติมในส่วนนี้)_
+- **Q1: In this codebase, what is the difference between a `GetxController`'s lifecycle and a widget `State`'s lifecycle? Name one bug from Part A that exists because of confusion between the two.**
+  A `GetxController` persists across screens via GetX DI/Routing until manually deleted from memory, whereas a widget `State` is tied to the UI tree and destroyed upon leaving the screen (`dispose`). Bug **RES-103** stems from this confusion: workers were not disposed in `onClose()`, leaving the controller alive in memory and firing duplicate requests on cart updates[cite: 2].
+
+- **Q2: When does wrapping a large subtree in a single `Obx` hurt you? How do you decide how tightly to scope reactivity?**
+  Wrapping a large subtree in a single `Obx` forces Flutter to rebuild all child widgets whenever a state changes, causing frame drops (Jank). Reactivity should be scoped as tightly as possible by isolating dynamic UI elements into small sub-widgets and wrapping `Obx` strictly around the specific text or component that updates[cite: 2].
+
+- **Q3: How would you write an automated test that would have caught RES-106 before release? What (if anything) would you change in the code to make such a test possible?**
+  Write a Unit or Widget Test using a Mock Clock to verify the "Pickup today" filter across different local timezones[cite: 2]. In the codebase, abstract `DateTime.now()` calls into a Clock Provider or use Parameter Injection so automated tests can inject controlled timestamps and timezones[cite: 2].
 
 ---
 
 ## 4. Time Spent & Next Steps
 
-- **Time Spent:** ประมาณ 12-16 ชั่วโมง
+- **Time Spent:** Approximately 12–16 hours.
 - **What I would do next with one more day:**
-  หากมีเวลาเพิ่มขึ้นอีกหนึ่งวัน จะดำเนินการเพิ่มชุด **Automated Tests** (Unit Tests สำหรับ Controller Logic และ Widget Tests สำหรับ Timer Lifecycles) และปรับปรุงระบบ **Image Caching** เพื่อเพิ่ม **Performance** ในการ Scroll หน้า Feed ให้ดียิ่งขึ้น
+  Write automated test suites (Unit Tests for controller logic and Widget Tests for timer lifecycles) and optimize image caching for smoother feed scrolling performance.
